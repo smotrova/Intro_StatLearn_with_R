@@ -1,0 +1,320 @@
+---
+title: "Support Vector Machines"
+author: "Olena Smotrova"
+date: "13/03/2018"
+output: 
+  pdf_document:
+    fig_caption: yes
+    highlight: tango
+    toc: yes
+bibliography: library.bib
+link-citations: yes
+csl: advanced-optical-materials.csl
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Perceptron
+
+$p$-dimensional hyperplane in a $p$-dimensional space is defined by
+\begin{equation}
+\beta_{0}+\beta_{1}x_{1}+...+\beta_{p}x_{p}= 0
+\label{eq:1}
+\end {equation}
+Suppose, we have $n$ training observations in $p$-dimensional space that fall into two classes. $y_{1},...,y_{n} \in {-1,1}$, where -1 represents one class and 1 the other class.
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE, fig.width=4, fig.height=3, fig.align='center', fig.cap= "There are two classes of observations, shown in red and blue."}
+# Perceptron
+library(ggplot2)
+library(ggthemes)
+library(gridExtra)
+library(ggsci)
+library(e1071)
+
+# Prepearing a data set on plane
+# Number of points in the plane
+
+set.seed(2000)
+N = 25
+
+# Generate a set of points
+x = runif(N, -1, 1)
+y = runif(N, -1, 1)
+
+# choose a random line in the plane 
+x1 = sample(runif(N, -1, 1), 1)
+x2 = sample(runif(N, -1, 1), 1)
+
+y1 = sample(runif(N, -1, 1), 1)
+y2 = sample(runif(N, -1, 1), 1)
+
+a = (y1 - y2)/(x1-x2)
+b = y1 - a*x1
+
+# label the point acording to the random line
+label = (ifelse(y > a*x + b, 1, -1))
+
+D = cbind.data.frame(x,y,label)
+
+# Data set separeted by line and colored according to the class
+g = ggplot(data = D, aes(x,y)) + 
+  geom_point(aes(col = as.factor(label)), size = 3) +
+    labs(color = "Class")+xlab('X1')+ylab('X2')+
+      scale_color_aaas()
+g
+```
+Our goal is to develop a classifier based on the training data that will correctly classify test observations. Separating hyperplane has the property that
+
+\begin{equation}
+y_{i}(\beta_{0}+\beta_{1}x_{1}+...+\beta_{p}x_{p}) > 0,   \forall i = 1,...,n
+\label{eq:2}
+\end{equation}
+
+If a separating hyperplane exist, a test observations are assigned a class depending on which side of hyperplane it is located. A simple linear algorithm (Perceptron algorithm) is following
+
+* Update $\beta, \beta_{0}$ based on just one data point (x,y) at a time
+* Initial guess $\beta_{0}, \beta = 0$
+* If $\beta \cdot x >0$ no update
+* If $\beta \cdot x \leq 0$ (point is missclassified):  
+      $\beta = \beta + yx$, 
+      $\beta_{0} = \beta_{0} + y$
+      
+      
+```{r, echo=FALSE, message=FALSE, warning=FALSE, fig.width=8, fig.height=3, fig.align='center', fig.cap= "Left: Black lines are three (of many) separating hyperplane given by perceptron algorithm. Right: Maximal margin hyperplane is shown in black solid line. The margin is the distance from solid line to either of the dashed lines."}
+
+perceptron <- function(data, plot) {
+  
+  # initial guess - perceptron coefficients are 0
+  beta = rep(0, 2)
+  beta0 = 0
+  
+  # Max number of interation
+  max_iter = 1000
+  
+  iter = 0
+  D_unclass = data
+  
+  iter = 0
+  while (nrow(D_unclass) != 0 & iter <= max_iter) {
+    # Choose arbitrary point deom data set
+    i = sample.int(nrow(D_unclass),1)
+    
+    # Correct the separator line with respect to this point 
+    if( (beta0 + beta[1]*D_unclass[i, 1]+beta[2]*D_unclass[i, 2])*D_unclass[i, 3] <= 0) {
+      beta = beta + c(D_unclass[i, 1], D_unclass[i, 2])*D_unclass[i, 3]
+      beta0 = beta0 + D_unclass[i, 3]
+    }
+    
+    # Check the status of other points with respect to updated separator
+    # Save all incorrectly clissified points in new data set, the set of unclassified points
+    
+    D_unclass_new = data.frame()
+    
+    for (i in (1:nrow(data))) {
+      if ( (beta0 + beta[1]*data[i, 1]+beta[2]*data[i, 2])*data[i, 3] <= 0) {
+        D_unclass_new = rbind(D_unclass_new, D[i,])
+      }
+    }
+    D_unclass = D_unclass_new
+    iter = iter + 1
+  }
+  
+  if (iter > max_iter) {
+    print(paste("Perceptron algorithm: did not converge within the specified number of iterations",
+                as.character(max_iter)))
+    
+  } else {
+    g = plot + geom_abline(slope = -beta[1]/beta[2], intercept = -beta0/beta[2], lty = 1, color = "black", size = 0.5)
+    return (g)
+  }
+  
+}
+
+# to plot three lines run three times
+p = perceptron(D, g)
+p = perceptron(D, p)
+p = perceptron(D, p)
+
+# max margin hyperplane
+# support vector classifier
+# max margins classifier => cost is large
+
+svmfit = svm(formula = as.factor(label) ~ ., data = D, kernel='linear', cost = 1e5, scale = FALSE) 
+
+g1 = ggplot(data = D, aes(x,y)) + 
+  geom_point(aes(col = as.factor(label)), size = 3) +
+    geom_abline(slope = -sum(svmfit$coefs*svmfit$SV[,1])/sum(svmfit$coefs*svmfit$SV[,2]), 
+                intercept = svmfit$rho/sum(svmfit$coefs*svmfit$SV[,2]), lty = 1) +
+        geom_abline(slope = -sum(svmfit$coefs*svmfit$SV[,1])/sum(svmfit$coefs*svmfit$SV[,2]), 
+                  intercept = svmfit$rho/sum(svmfit$coefs*svmfit$SV[,2]) + 1.0/sum(svmfit$coefs*svmfit$SV[,2]), lty = 2) +
+           geom_abline(slope = -sum(svmfit$coefs*svmfit$SV[,1])/sum(svmfit$coefs*svmfit$SV[,2]), 
+                    intercept = svmfit$rho/sum(svmfit$coefs*svmfit$SV[,2]) - 1.0/sum(svmfit$coefs*svmfit$SV[,2]), lty = 2) +
+               labs(color = "Class")+xlab('X1')+ylab('X2')+
+                      scale_color_aaas()
+
+
+grid.arrange(p, g1, nrow = 1, ncol = 2)
+```
+
+## Maximal margin classifier
+
+In general, if our data can be perfectly separated using a hyperplane, then there will in fact exist an infinite number of such hyperplanes. In order to construct a classifier based on a separating hyperplane, we need to choose one. A natural choice is the _maximal margin hyperplane_, which is the separating htperplane that is farthest from the training observations. We compute the distance from each training observation to a given separating hyperplane. The minimal distance from observations to hyperplane is the _margin_. The maximal margin hyperplane is a separating hyperplane for which the margin is largest. In Fig.2 (right) the maximal margin hyperplane and the margin are shown. Two red points and one blue point on the dashed lines are the _support vectors_. The "support" the maximal margin hyperplane in the sense that if these points were moved slightly then the maximal margin hypeplane would move as well. The maximal margin hyperplane depends directly on only small subset of the observations (support vectors) is an important property. The margin lines are defined by $\beta_{0}+\beta \cdot x = \pm1$, and the margin equals $1/||\beta||$.
+
+## Support vector classifier
+
+The maximal margin classifier is a very natural way to perform classification, if a separating hyperplane exists. The generalization of the maximal margin classifier to the non-separable case is known as the _support vector classifier_.Even if a separating hyperplane exists, a classifier based on a separating hyperplane will necessarily perfectly classify all of the training observations but can caused sensitivity of individual observations. In this case we can consider a classifier based on a hyperplane that does not perfectly separate two classes. This lead to greater robustness to individual observations and better classifications of most of the training classification. The support vector classifier is also called _soft margin classifier_. The hyperplane is chosen to correctly separate most of training observations into two classes, but may misclassify a few observations. The observations that lie directly on the margin, or on the wrong side of the margin for their class, are known as _support vectors_.
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE, fig.width=12, fig.height= 3, fig.align='center', fig.cap= "Black lines are separating hyperplanes. Dashed lines are the margin lines. Left: 3 support vectors. Middle: 9 support vectors Right: 20 support vectors."}
+
+svmfit = svm(formula = as.factor(label) ~ ., data = D, kernel='linear', cost = 1.5, scale = FALSE) 
+
+g2 = ggplot(data = D, aes(x,y)) + 
+  geom_point(aes(col = as.factor(label)), size = 3) +
+    geom_abline(slope = -sum(svmfit$coefs*svmfit$SV[,1])/sum(svmfit$coefs*svmfit$SV[,2]), 
+                intercept = svmfit$rho/sum(svmfit$coefs*svmfit$SV[,2]), lty = 1) +
+        geom_abline(slope = -sum(svmfit$coefs*svmfit$SV[,1])/sum(svmfit$coefs*svmfit$SV[,2]), 
+                  intercept = svmfit$rho/sum(svmfit$coefs*svmfit$SV[,2]) + 1.0/sum(svmfit$coefs*svmfit$SV[,2]), lty = 2) +
+           geom_abline(slope = -sum(svmfit$coefs*svmfit$SV[,1])/sum(svmfit$coefs*svmfit$SV[,2]), 
+                    intercept = svmfit$rho/sum(svmfit$coefs*svmfit$SV[,2]) - 1.0/sum(svmfit$coefs*svmfit$SV[,2]), lty = 2) +
+               labs(color = "Class")+xlab('X1')+ylab('X2')+
+                      scale_color_aaas()
+
+svmfit = svm(formula = as.factor(label) ~ ., data = D, kernel='linear', cost = .15, scale = FALSE) 
+
+g3 = ggplot(data = D, aes(x,y)) + 
+  geom_point(aes(col = as.factor(label)), size = 3) +
+    geom_abline(slope = -sum(svmfit$coefs*svmfit$SV[,1])/sum(svmfit$coefs*svmfit$SV[,2]), 
+                intercept = svmfit$rho/sum(svmfit$coefs*svmfit$SV[,2]), lty = 1) +
+        geom_abline(slope = -sum(svmfit$coefs*svmfit$SV[,1])/sum(svmfit$coefs*svmfit$SV[,2]), 
+                  intercept = svmfit$rho/sum(svmfit$coefs*svmfit$SV[,2]) + 1.0/sum(svmfit$coefs*svmfit$SV[,2]), lty = 2) +
+           geom_abline(slope = -sum(svmfit$coefs*svmfit$SV[,1])/sum(svmfit$coefs*svmfit$SV[,2]), 
+                    intercept = svmfit$rho/sum(svmfit$coefs*svmfit$SV[,2]) - 1.0/sum(svmfit$coefs*svmfit$SV[,2]), lty = 2) +
+               labs(color = "Class")+xlab('X1')+ylab('X2')+
+                      scale_color_aaas()
+
+grid.arrange(g1, g2, g3,  nrow = 1, ncol = 3)
+
+```
+
+The support vector classifier is demonstrated using `svm()` function from `e1071` library.
+
+`svm(y ~ ., data, kernel='linear', cost, scale = FALSE)`
+
+A very large value of `cost` corresponds to the case that no observations are misclassified (maximal margin classifier). The small value of cost enables one to build the `soft` margin classifier.
+
+## Support vector machines (non-linear decision boundaries)
+
+The _support vector machine_ is an extension of the support vector classifier using kernels. This enables one to deal with non-linear class boundaries. The support vector machine can be represent by a function in a form
+
+\begin{equation}
+f(x) = \beta_{0} + \sum_{s \in S}{\alpha_{i}K(x, x_{i})}
+\label{eq:3}
+\end{equation}
+
+where $K$ is some function that we refer to as a _kernel_. $S$ is a set of indices of the support vectors. We could take different kernels
+
+* linear
+
+\begin{equation}
+K(x, x_{i})=x \cdot x_{i} = \sum_{j=1}^{p}{x_{j}x_{ij}}
+\label{eq:4}
+\end{equation}
+
+* polynomial of degree $d$
+
+\begin{equation}
+K(x, x_{i})=(1+x \cdot x_{i})^d=(1+\sum_{j=1}^{p}{x_{j}x_{ij}})^d
+\label{eq:5}
+\end{equation}
+
+* radial, $\gamma$ is a positive constant
+\begin{equation}
+K(x, x_{i})=exp(-\gamma||x-x_{i}||^2)=exp(-\gamma\sum_{j=1}^{p}{(x_{j}-x_{ij})^2})
+\label{eq:6}
+\end{equation}
+
+By substituting (\ref{eq:4}) in (\ref{eq:3}) and expanding each of the inner product, we could establish the correspondence between $\alpha_{i}$  (\ref{eq:3}) and parameters $\beta_{i}$ in (\ref{eq:1}). For any type of kernel we can use `svm()` function giving appropriate value of the parameter `kernel`. 
+
+In Fig.4 examples for some data with non-linear boundary are presented.
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE, fig.width=12, fig.height= 3, fig.align='center', fig.cap="Black lines are class-separating boundaries. Grey lines are the margin lines. Cost is large. Left: SVM with a linear kernel. Support vector classifier peforms bad in this case. Data set is not linearly separable. Middle: SVM with a polynomial kernel of degree 2. Right: SVM with a radial kernel and parameter gamma is 0.5."}
+
+set.seed(2018)
+N = 40
+
+# Generate a set of points
+x = runif(N, -1, 1)
+y = runif(N, -1, 1)
+
+# choose a random line in the plane 
+x1 = sample(runif(N, -1, 1), 1)
+x2 = sample(runif(N, -1, 1), 1)
+
+y1 = sample(runif(N, -1, 1), 1)
+y2 = sample(runif(N, -1, 1), 1)
+
+a = (y1 - y2)/(x1-x2)
+b = y1 - a*x1
+
+# label the point according to the class
+label = (ifelse((y > a*x + b)&(y < a*x + b + 1), 1, -1))
+D = cbind.data.frame(x,y,label)
+
+svmfit.linear = svm(formula = as.factor(label) ~ ., data = D, kernel='linear', cost = 1e5, scale = FALSE) 
+summary(svmfit.linear)
+#==============================================================================
+svmfit.polynomial = svm(formula = as.factor(label) ~ ., data = D, kernel='polynomial', 
+              degree = 2, cost = 1e5, scale = FALSE) 
+
+summary(svmfit.polynomial)
+#====================================================================================
+svmfit.radial = svm(formula = as.factor(label) ~ ., data = D, kernel='radial', 
+              cost = 1e5, scale = FALSE) 
+summary(svmfit.radial)
+#====================================================================================
+boundaries_plot <- function(model) {
+  
+  u = expand.grid(x = seq(-1, 1, .01), y = seq(-1, 1, .01))
+  
+  model.pred = predict(model, u, decision.values = TRUE)
+  f = attributes(model.pred)$decision.values
+  Z = cbind(u, f)
+  
+  # Data set colored according to the class
+  g = ggplot(data = D, aes(x,y)) + 
+    geom_point(aes(col = as.factor(label)), size = 3) +
+    labs(color = "Class")+
+    scale_color_aaas()
+
+    g + stat_contour(data = Z, aes(z=Z[,3]), breaks = 0, color = 'black', size = 1.2)+
+    stat_contour(data = Z, aes(z=Z[,3]+1), breaks = 0, color = 'darkgrey', lty=2, size = 1) +
+    stat_contour(data = Z, aes(z=Z[,3]-1), breaks = 0, color = 'darkgrey', lty=2, size = 1)
+} 
+
+
+grid.arrange(boundaries_plot(svmfit.linear), 
+             boundaries_plot(svmfit.polynomial),
+             boundaries_plot(svmfit.radial),
+             ncol = 3)
+
+```
+
+To find the best values for parameters `cost`, `gamma` and `degree` we use cross-validation with `tune()` function, which is a part of package `e1071`.
+```{r}
+
+set.seed(2018)
+svm.cv = tune(svm, as.factor(label) ~ ., data = D, kernel='radial',
+                ranges = list(cost = c(1, 10, 100, 1000),
+                              gamma = c(0.1, 0.5, 1, 2, 10)) )
+svm.cv$best.parameters
+
+```
+
+```{r}
+svmfit.cv = svm(formula = as.factor(label) ~ ., data = D, kernel='radial', 
+                cost = 10, 
+                gamma = 0.5, scale = FALSE) 
+summary(svmfit.cv)
+```
+

@@ -1,0 +1,83 @@
+---
+title: "The ROC Curve for a Binary Classifier"
+output: 
+  beamer_presentation: 
+    colortheme: orchid
+    fig_caption: yes
+    theme: Singapore
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+## Confusion Matrix
+A binary classifier can make two types of errors: positive cases that were incorrectly identified as negative and negative cases that were incorrectly identified as positive. Performance of such classifier is evaluated using the _confusion matrix_
+
+
+$$\begin{matrix}
+   Actual/Predicted\\
+   \begin{matrix}
+   & No & Yes\\
+   No & a & b\\
+   Yes & c & d
+   \end{matrix} 
+\end{matrix} $$
+
+## Accuracy
+
+- $a, d$ are the numbers of _correct_ predictions of negative/positive examples
+- $b, c$ are the numbers of _incorrect_ predictions of negative/positive examples
+- The _accuracy_ is the proportion of the predictions that are correct
+$$ \frac{a+d}{a+b+c+d} $$
+
+## True Positive Rate, False Positive Rate
+
+- True positive rate is a proportion of positive cases that were correctly identify
+$$ TP = \frac{d}{d+c}$$
+- False positive rate is a proportion of negative cases that were incorrectly identify
+$$ FP = \frac{b}{a+b}$$
+- True negative rate is a proportion of negative cases that were correctly identify
+$$ TN = \frac{a}{a+b}$$
+- False negative rate is a proportion of positive cases that were incorrectly identify
+$$ FN = \frac{c}{d+c}$$
+- $Sensitivity = TP, Specificity = TN = 1-FP$
+
+## The ROC
+
+- The ROC curve is a graphic for displaying the two types of errors for all possible _thresholds_
+$$ Pr(Y="Yes"|X=x)>threshold$$
+- _Threshold_ is the cutoff imposed on the predicted probabilities for assigning observation to each class
+
+## The ROC, AUC
+
+The overall performance of a classifier is given by the area under the ROC curve (AUC). An ideal ROC curve will hug the top left corner, so the larger the AUC the better classifier.
+
+```{r echo=FALSE, fig.height=2, fig.width=4, message=FALSE, warning=FALSE, paged.print=TRUE}
+
+library(ROCR)
+library(ISLR)
+library(ggplot2)
+
+data("Default")
+logDefault = glm(default~student+balance+income,family="binomial",data=Default)
+
+logPred = predict(logDefault, data=Default, type="response")
+
+# What is the training set AUC?
+predROCR = prediction(logPred, Default$default)
+
+# Compute AUC
+# performance(predROCR, "auc")@y.values
+
+# Plot the ROC
+perf = performance(predROCR, "tpr", "fpr")
+
+ROC = cbind.data.frame(FP=unlist(perf@x.values), 
+                       TP=unlist(perf@y.values), Threshold = unlist(perf@alpha.values))
+
+ggplot(ROC, aes(FP, TP)) + geom_line( aes(col = Threshold), size = 1.0)+
+  geom_line(data = ROC[ROC$FP == ROC$TP, ], lty = 2, color = 'darkgrey')
+
+```
+

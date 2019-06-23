@@ -1,0 +1,183 @@
+---
+title: "Regression and Regularization"
+author: "Olena Smotrova"
+date: "22/02/2018"
+output:
+  bookdown::html_document2:
+    theme: journal
+    highlight: tango
+    fig_caption: yes
+    toc: yes
+    number_sections: no
+bibliography: library.bib
+link-citations: yes
+csl: advanced-optical-materials.csl
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Multiple Linear Regression
+
+Linear regression is a very simple approach for supervised learning. $Y$ is a response variable, $X_{1}, X_{2}, ..., X_{p}$ are $p$ distinct predictors. Multiple linear regression model takes the form 
+
+\begin{equation} 
+  Y = \beta_{0}+\beta_{1}X_{1}+...+\beta_{p}X_{p}+\epsilon,
+  (\#eq:1)
+\end{equation}
+
+${\beta_{0}, \beta_{1}, ..., \beta_{p}}$ are unknown and must be estimated. The parameters are estimated using least square approach. We choose ${\beta_{0}, \beta_{1}, ..., \beta_{p}}$ to minimize the _sum of square residuals_ (RSS)
+
+\begin{equation}
+  RSS = \sum_{i=1}^{n}{(y_{i}-\hat y_{i})^2}=\sum_{i=1}^{n}{(y_{i}-\hat \beta_{0}-\hat \beta_{1}x_{i1}-\hat \beta_{2}x_{i2}-...-\hat \beta_{p}x_{ip})^2}
+  (\#eq:2)
+\end{equation}
+
+The values ${\hat \beta_{0}, \hat\beta_{1}, ..., \hat\beta_{p}}$ that minimize RSS are the multiple least squares regression coefficient estimates.
+
+_Mean square error_ (MSE)
+\begin{equation}
+  MSE = \frac{1}{n}\sum_{i=1}^{n}{(y_{i}-\hat y_{i})^2}
+  (\#eq:3)
+\end{equation}
+
+The MSE will be small if the predicted response are very close tj the true response, and will be large if some of the observations the predicted and true responses differ substantially. The quality of a linear regression fit is typically assessed using two related quantities: the _regular standart error_ (RSE) and $R^2$ statistics. The RSE is an estimate of the standard deviation of $\epsilon$.
+
+\begin{equation}
+  RSE = \sqrt{\frac{1}{n-p-1}RSS}
+  (\#eq:4)
+\end{equation}
+
+\begin{equation}
+  R^2 = 1-\frac{RSS}{TSS}
+  (\#eq:5)
+\end{equation}
+
+\begin{equation}
+  TSS = \sum_{i=1}^{n}{(y_{i}-\overline y_{i})^2}
+  (\#eq:6)
+\end{equation}
+
+The TSS is _total sum of squares_, $\overline y=\frac{1}{n}\sum_{i=1}^{n}{y_{i}}$. The TTS measures the total variance in the response $Y$. $R^2$ statistic that is close to 1 indicates that a large proportion of the variability in the response has been explained by the regression.
+
+```{r}
+diabets <- read.csv('Data/diabetes-data.csv', header = FALSE )
+
+names(diabets) = c('age', 'sex', 'body mass index', 'blood pressure', 
+                   'serum1', 'serum2', 'serum3', 'serum4', 'serum5', 'serum6', 'y')
+str(diabets)
+```
+
+To fit linear regression divide data set into training and test subsets.
+```{r}
+index = sample(nrow(diabets), size = 100)
+Train = diabets[-index, ]
+Test = diabets[index, ]
+
+```
+
+Fit linear regression model on training set
+```{r}
+lm.mod = lm(y ~ ., data = Train)
+summary(lm.mod)
+```
+
+Predict values of $y$ on test set and assessing accuracy
+```{r}
+lm.pred = predict(lm.mod, newdata = Test)
+
+TSS = sum((Test$y - mean(Test$y))**2) 
+RSS = sum((Test$y - lm.pred)**2)
+
+R_2 = 1 - RSS/TSS 
+paste("Test R2 lm:", as.character(R_2))
+
+MSE = mean((Test$y - lm.pred)**2)
+paste("Test MSE lm:", as.character(MSE))
+```
+
+
+## Ridge Regression
+The ridge regression coefficient estimates $\hat \beta^{R}$ are the values that minimize
+
+\begin{equation}
+RSS+\lambda\sum_{j=1}^{p}{\beta_{j}^{2}}
+(\#eq:7)
+\end{equation}
+
+where $\lambda\geq0$ is a tuning parameter. Second term $\lambda\sum_{j=1}^{p}{\beta_{j}^{2}}$
+is called a shrinkage penalty. Shrinkage penalty is small, when ${\beta_{0}, \beta_{1}, ..., \beta_{p}}$ are close to $0$. It has effect of shrinking the estimates $\beta_{j}$ towards $0$. At $\lambda=0$ penalty has no effect. $\lambda\to\infty$ hence $\hat\beta^{R}\to0$. Selecting a good value for $\lambda$ is critical. See @StatLearn for more details.
+
+For ridge and Lasso `glmnet` package is used. Parameter `alpha=1` is the lasso penalty, and `alpha=0` the ridge penalty.
+
+```{r, warning=FALSE, message=FALSE}
+library(glmnet)
+```
+
+```{r}
+x = model.matrix(y~., diabets)[, -1]
+y = diabets$y
+
+ridge.mod = glmnet(x[-index, ], y[-index], alpha = 0)
+```
+
+We use cross-validation to choose the tunning parameter $\lambda$. By default, function `cv.glmnet()` performs ten-fold cross-validation.
+
+```{r}
+cv.out = cv.glmnet(x[-index, ], y[-index], alpha = 0)
+best.lam = cv.out$lambda.min
+best.lam
+```
+
+```{r}
+ridge.pred = predict(ridge.mod, s = best.lam, newx = x[index, ])
+
+```
+
+```{r}
+MSE = mean((diabets$y[index] - ridge.pred)**2 )
+MSE
+
+TSS = sum((Test$y - mean(Test$y))**2) 
+RSS = sum((Test$y - ridge.pred)**2)
+
+R_2 = 1 - RSS/TSS 
+paste("Test R2 cv-ridge:", as.character(R_2))
+```
+
+
+## The Lasso Regression
+
+\begin{equation}
+RSS+\lambda\sum_{j=1}^{p}{|\beta_{j}|}
+(\#eq:8)
+\end{equation}
+
+The lasso penalty is $\lambda\sum_{j=1}^{p}{|\beta_{j}|}$. At $\lambda=0$ penalty has no effect. $\lambda\to\infty$ hence $\hat\beta^{L}\to 0$. The lasso performs variable selection. We say that the lasso yields sparse models - that is, models that involves only a subset of the variables. Selection of $\lambda$ is performed by cross=validation. See @StatLearn for more details.
+
+_Note_
+$n\gg p$ Least square estimates good performs. $p>n$ no unique least squares coefficient estimate. $n\ge p$ poor prediction with min RSS.
+
+Parameter `alpha=1`
+```{r}
+lasso.mod = glmnet(x[-index, ], y[-index], alpha = 1)
+cv.out = cv.glmnet(x[-index, ], y[-index], alpha = 1)
+best.lam = cv.out$lambda.min
+best.lam
+
+lasso.pred = predict(lasso.mod, s = best.lam,  newx = x[index, ])
+
+MSE = mean((diabets$y[index] - lasso.pred)**2 )
+MSE
+
+TSS = sum((Test$y - mean(Test$y))**2) 
+RSS = sum((Test$y - lasso.pred)**2)
+
+R_2 = 1 - RSS/TSS 
+paste("Test R2 cv-lasso:", as.character(R_2))
+```
+
+## Refefences
+
+

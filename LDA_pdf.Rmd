@@ -1,0 +1,451 @@
+---
+title: "Linear Disriminant Analysis"
+author: "Olena Smotrova"
+date: "18/02/2018"
+output: 
+  pdf_document:
+    fig_caption: yes
+    highlight: tango
+    toc: yes
+bibliography: library.bib
+link-citations: yes
+csl: advanced-optical-materials.csl
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Bayes' Theorem for Classification
+
+Suppose that $Y$ is a qualitative response variable and can take $K, K \geq 2$ distinct and unordered values.  We denote $p$ different predictors as $X = (X_{1}, X_{2}, ..., X_{p})$.  Rather than modeling response $Y$ directly, linear disriminant analysis models the probability that $Y$ belongs to a paticular category. Bayes' Theorem states that
+
+\begin{equation} 
+  Pr(Y=k|X=x) = \frac{\pi_{k}f_{k}(x)}{\sum_{l=1}^{K} \pi_{l}f_{l}(x) }
+\end{equation} 
+
+where $\pi_{k}$ is a probability that a random choosen observations belongs to $k$th class.
+$f_{k}(X) = Pr(X=x|Y=k)$ is the density function of $X$ for an observation that comes from $k$th class. $p_{k}(x) = Pr(Y=k|X=x)$ is the probability that an observation $X=x$ belongs to $k$th class, given the predictor value for observation.
+
+## Linear Disriminant Analysis for _p_ = 1
+
+The classification method is described by @StatLearn. We would like to obtain an estimate for $f_{k}(x)$ in order to estimape $p_{k}(x)$. We will classify an observation to the class for wich $p_{k}(x)$ is greatest. Assume that $p = 1$, we have only one predictor. Assume that $f_{k}(x)$ is normal or Gaussian. The normal density in one dimension takes form
+
+\begin{equation}
+  f_{k}(x)=\frac{1}{\sqrt{2\pi\sigma_{k}}}exp(-\frac{1}{2\sigma_{k}^{2}}(x-\mu_{k})^2)
+\end{equation}
+
+where $\mu_{k}$ and $\sigma_{k}^{2}$ are the mean and variance parameters for the $k$th class. Assume further that $\sigma_{1}^{2}=\sigma_{2}^{2}=...=\sigma_{k}^{2}=\sigma^{2}$ is the same variance across all $K$ classes. Put (2) in expression (1), we obtain
+
+\begin{equation}
+  p_{k}(x)=\frac{\pi_{k}\frac{1}{\sqrt{2\pi\sigma}}exp(-\frac{1}{2\sigma^2}(x-\mu_{k})^2)}     {\sum_{l=1}^{K} \pi_{l}\frac{1}{\sqrt{2\pi\sigma}}exp(-\frac{1}{2\sigma^2}(x-\mu_{l})^2) }
+\end{equation}
+
+Classifier assigns an observation $X=x$ to the class for wich $p_{k}$ is largest. Taking log of (3) and rearranging the terms we obtain
+
+\begin{equation}
+  \delta_{k}(x)=x\cdot\frac{\mu_{k}}{\sigma^2}-\frac{\mu_{k}^2}{2\sigma^2}+ln(\pi_{k})
+\end{equation}
+
+This equalent to assigning observation to the class for which $\delta(x)$ is largest. In practice we have to estimate parameters $\mu_{1},...,\mu_{K}$, $\pi_{1},...,\pi_{k}$ and $\sigma$.
+
+\begin{equation}
+  \hat{\delta_{k}}(x)=x\cdot\frac{\hat{\mu_{k}}}{\hat{\sigma}^2}-\frac{\hat{\mu_{k}}^2}{2\hat{\sigma}^2}+ln(\pi_{k})
+\end{equation}
+
+Discriminant functions $\hat{\delta}_{k}$ in (5) are linear functions of $x$.
+
+Now perform LDA on [wine](https://archive.ics.uci.edu/ml/datasets/wine) data set. These data are the results of a chemical analysis of wines grown in the same region in Italy but derived from three different cultivars. The analysis determined the quantities of 13 constituents found in each of the three types of wines. 
+
+```{r}
+wine = read.csv("./Data/wine.data.txt")
+names(wine) = c('Label', 'Alcohol', 'Malic acid', 'Ash', 
+                'Alcalinity of ash','Magnesium', 'Total phenols', 
+                'Flavanoids', 'Nonflavanoid phenols', 'Proanthocyanins', 
+                'Color intensity', 'Hue', 'OD280/OD315 of diluted wines', 'Proline')
+
+wine$Label = as.factor(wine$Label)
+str(wine)
+```
+
+```{r, include=FALSE}
+library(ggplot2)
+library(gridExtra)
+library(plot3D)
+library(ggthemes)
+
+library(caTools)
+library(dplyr)
+
+library(MASS)
+library(pracma)
+library(mnormt)
+```
+We separate `wine` data set into training and test data set.
+
+```{r}
+spl = sample.split(wine$Label, SplitRatio = 0.735) # CaTools
+wineTrain = subset(wine, spl == TRUE)
+wineTest = subset(wine, spl == FALSE)
+
+table(wineTrain$Label)
+table(wineTest$Label)
+```
+
+Normal density distributions $\hat{f_{k}}(x) \sim N(\hat{\mu}_{k}, \hat{\sigma}_{k})$ for 13 predictors are ploted below. For the feature Flavonoids three classes seem to be the most separated.
+
+```{r, echo=FALSE, warning=FALSE, fig.width=12, fig.height=8, fig.cap= "An example with three classes. One-dimensional Gaussian density functions are shown for all 13 features", fig.align='center'}
+
+
+density_line<- function(feature) {
+  
+d = data.frame()  
+
+  for (label in seq(1,3, 1)) {
+    
+    data = wineTrain %>% filter(Label == label)
+    n_col = which(names(wineTrain) == feature)
+    
+    mu = mean(data[ ,n_col])
+    sd = sd(data[ ,n_col])
+  
+    x = seq(mu-3*sd, mu+3*sd, length.out= 1000)
+    y = dnorm(x, mu, sd)
+    
+    d = rbind(d,  data.frame(x, y = dnorm(x, mu, sd), class = as.factor(rep(label, 1000)) ) )
+
+    }
+
+   g = ggplot(data = d, aes(x,y)) + 
+    xlab(feature) + ylab("Density") + 
+    geom_line(aes(color = class), size = 1.5)+
+    scale_colour_brewer(palette = "Set1")
+   g
+}
+
+grid.arrange(density_line("Alcohol"),
+             density_line('Malic acid'),
+             density_line('Ash'),
+             density_line('Alcalinity of ash'),
+                  
+             density_line('Magnesium'),
+             density_line('Total phenols'),
+             density_line('Flavanoids'),
+             density_line('Nonflavanoid phenols'),
+                  
+             density_line('Proanthocyanins'),
+             density_line('Color intensity'),
+             density_line('Hue'),
+             density_line('OD280/OD315 of diluted wines'),
+                  
+             density_line('Proline'),
+                  
+             nrow = 4, ncol = 4)
+```
+
+We peek one feature `Alcohol` to build LDA using `MASS` library.
+
+```{r, warning=FALSE}
+library(MASS)
+lda.fit = lda(Label ~ Alcohol, data = wineTrain)
+lda.fit
+```
+
+The `predict()` function returns a list with three elements. The first element `class` contains LDA's predictions about wine labels.
+```{r}
+lda.pred = predict(lda.fit, newdata = wineTest)
+names(lda.pred)
+
+lda.class = lda.pred$class
+
+```
+
+A _confusion matrix_ compares the LDA predictions to the true classes for test set observations.
+```{r}
+table(lda.class, wineTest$Label)
+```
+
+The last commands computs the test set error rate. This level is high. To improve model we have to use more than one predictor.
+```{r}
+mean(lda.class != wineTest$Label)
+```
+
+## Linear Discriminant Analysis for _p_ > 1
+
+Now we extend LDA classifier to the case of multile predictors. To do this we will assume that $X = (X_{1}, X_{2}, ..., X_{p})$ is drawn from a multivariate Gaussian distribution with a class-specific mean vector $\mu$ and a common covariance matrix $\Sigma$. We write $X\sim N(\mu, \Sigma)$. The multivariate Gaussian density is defined
+
+\begin{equation}
+  f(x)=\frac{1}{(2\pi)^{p/2}{|\Sigma|}^{1/2}}exp(-\frac{1}{2}(x-\mu)^T\Sigma^{-1}(x-\mu))
+\end{equation}
+
+where $|\Sigma| = det(\Sigma)$ and $\Sigma = Cov(X)$ is the $p \times p$ matrix.
+
+\begin{equation}
+\Sigma = \begin{pmatrix}
+  Var(X_{1}) & Cov(X_{1},X_{2}) & \cdots & Cov(X_{1},X_{p}) \\
+  Cov(X_{2},X_{1}) & Var(X_{2}) & \cdots & Cov(X_{2},X_{p}) \\
+  \vdots  & \vdots  & \ddots & \vdots  \\
+  Cov(X_{p},X_{1}) & Cov(X_{p},X_{2}) & \cdots & Var(X_{p}) 
+ \end{pmatrix}
+\end{equation}
+
+The multivariate Gaussian distribution assumes that each individual predictor follows a one-dimensional normal distribution with some correlation between each pair of predictors. Three examples of multivariate Gaussian distributions with $p = 2$ are shown in Fig2.
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE, fig.width=8, fig.height=2, fig.align= 'center', fig.cap="Bivariate Gaussian density functions. Red and blue colors correspond to max and min values of density functions. Left: Uncorrelated random variables with equal variances. Middle: Uncorrelated random variables with different variances. Right: Correlated random variables with different variances."}
+
+TwoVarGauss <- function(mean, sigma, X1X2) {
+  
+  z = dmnorm(X1X2, mean, sigma) 
+  return(z)
+}
+
+DensityPlotBivarGauss <- function (X1 = rnorm(500), X2=rnorm(500)) {
+  
+  l1 = c( mean(X1) - 3*sd(X1), mean(X1) + 3*sd(X1)) 
+  l2 = c( mean(X2) - 3*sd(X2), mean(X2) + 3*sd(X2)) 
+  
+  if (l1%*%l1 > l2%*%l2) {
+    X1X2 = expand.grid(seq(l1[1], l1[2], length.out = 300),
+                       seq(l1[1], l1[2], length.out = 300))
+    
+    
+  } else { 
+    X1X2 = expand.grid(seq(l2[1], l2[2], length.out = 300),
+                       seq(l2[1], l2[2], length.out = 300))
+  }
+  
+  mean = c(mean(X1), mean(X2))
+  sigma = c(cov(X1, X1), cov(X1, X2), cov(X1, X2), cov(X2, X2))
+  sigma = matrix(sigma, nrow = 2, ncol = 2)
+  
+  density_distr = cbind(X1X2, TwoVarGauss(mean, sigma, X1X2))
+  names(density_distr) = c('x', 'y', 'f_k(x,y)')
+  
+  colors = jet2.col (n = 100, alpha = 1)   # function fromplot3D package, generates the matlab-type colors
+  
+  ggplot(data = density_distr, aes(x = x, y=y)) + 
+    geom_raster(aes(fill= `f_k(x,y)`))+
+      geom_contour(aes(z = `f_k(x,y)`)) +
+        scale_fill_gradientn(colors = colors)+
+          coord_fixed(ratio = 1) + xlab(NULL) + ylab(NULL)+
+            ggtitle(paste("Cor(X1, X2) = ", 
+                          as.character(round(cor(X1,X2),1))  )) + 
+                theme_void() + 
+                  theme(legend.position="none",
+                        plot.title = element_text(hjust = 0.5, vjust = -0.5))
+}  
+
+#-----------------------------------------------------------------
+set.seed(100)
+X1 = rnorm(1500, 0.0, 2.0)
+X2 = rnorm(1500, 0.0, 1.0)
+
+grid.arrange(DensityPlotBivarGauss(), 
+             DensityPlotBivarGauss(X1, X2),
+             DensityPlotBivarGauss(X1, 0.7*X1 - 1.5*X2),
+             nrow = 1, ncol = 3)
+
+```
+
+
+The LDA classifier assumes that the observations in the $k$th class are drawn from a multivariate Gaussian distribution $N(\mu_{k}, \Sigma)$ with a class-specific mean vector $\mu_{k}$ and a common to all $K$ classes covariance matrix $\Sigma$.
+
+```{r, echo=FALSE, fig.align='center', fig.width=5, fig.height=4, fig.cap= "An example with three classes for two variables with a class-specific mean vector and a common covariance matrix. Ellipses are contour-plots of class-specific Gaussian density functions." }
+
+
+TwoVarGauss <- function(mean, sigma, X1X2) {
+  
+  z = dmnorm(X1X2, mean, sigma) 
+  return(z)
+
+  }
+ThreeClassesPlot <- function() {
+
+  interval_1Var = c(mean(wineTrain$Alcohol) - 3*sd(wineTrain$Alcohol), 
+                    mean(wineTrain$Alcohol) + 3*sd(wineTrain$Alcohol))
+  interval_2Var = c(mean(wineTrain$Flavanoids) - 3*sd(wineTrain$Flavanoids), 
+                    mean(wineTrain$Flavanoids) + 3*sd(wineTrain$Flavanoids))
+
+  X1X2 = expand.grid( seq(interval_1Var[1], interval_1Var[2], length.out = 200),
+                      seq(interval_2Var[1], interval_2Var[2], length.out = 200) )
+
+
+class = 1
+X1 = wineTrain$Alcohol[wineTrain$Label == class]
+X2= wineTrain$Flavanoids[wineTrain$Label == class]
+
+mean1 = c(mean(X1), mean(X2))
+sigma1 = c(cov(X1, X1), cov(X1, X2), cov(X1, X2), cov(X2, X2))
+
+
+class = 2
+X1 = wineTrain$Alcohol[wineTrain$Label == class]
+X2= wineTrain$Flavanoids[wineTrain$Label == class]
+
+mean2 = c(mean(X1), mean(X2))
+sigma2 = c(cov(X1, X1), cov(X1, X2), cov(X1, X2), cov(X2, X2))
+
+
+class = 3
+X1 = wineTrain$Alcohol[wineTrain$Label == class]
+X2= wineTrain$Flavanoids[wineTrain$Label == class]
+
+mean3 = c(mean(X1), mean(X2))
+sigma3 = c(cov(X1, X1), cov(X1, X2), cov(X1, X2), cov(X2, X2))
+
+sigma = (sigma1+sigma2+sigma3)/3
+sigma = matrix(sigma, nrow = 2, ncol = 2)
+
+distr1 = TwoVarGauss(mean1, sigma, X1X2)
+distr2 = TwoVarGauss(mean2, sigma, X1X2)
+distr3 = TwoVarGauss(mean3, sigma, X1X2) 
+
+distr = cbind(X1X2, distr1, distr2, distr3)
+
+ggplot(data = distr, aes(Var1, Var2)) + 
+  
+  geom_contour(aes(z = distr1, color='1')) +
+    geom_contour(aes(z = distr2, color = '2')) +  
+      geom_contour(aes(z = distr3, color = '3')) +  
+  
+        geom_point(data = wineTrain, aes(x = Alcohol, 
+                                         y = Flavanoids, color = Label))+
+  
+          xlab("Alcohol") +
+            ylab("Flavanoids") + 
+              labs(color = "Class") +
+  
+                scale_colour_brewer(palette = "Set1")
+}
+
+ThreeClassesPlot()
+```
+
+Futher plugging the density function in Bayes' Theorem and preforming some transformations we obtain linear discriminat functions for many predictors
+
+\begin{equation}
+  \delta_{k}(x) = x^{T}\Sigma^{-1}\mu_{k}-\frac{1}{2}\mu_{k}^{T}\Sigma^{-1}\mu_{k}+ln(\pi_{k})
+\end{equation}
+
+Classifer assigns an observation $X=x$ to the class for wich $\delta_{k}$ is largest. Decision boundaries are defined by $\delta_{k}(x) = \delta_{l}(x)$ for $k\neq l$:
+
+\begin{equation}
+  x^{T}\Sigma^{-1}\mu_{k}-\frac{1}{2}\mu_{k}^{T}\Sigma^{-1}\mu_{k}+ln(\pi_{k})=x^{T}\Sigma^{-1}\mu_{l}-\frac{1}{2}\mu_{l}^{T}\Sigma^{-1}\mu_{l}+ln(\pi_{l})
+\end{equation}
+
+Assuming that
+\begin{equation}
+  a_{0} =ln(\frac{\pi_{k}}{\pi_{l}})-\frac{1}{2}(\mu_{k}+\mu_{l})^{T}\Sigma^{-1}(\mu_{k}-\mu_{l})
+\end{equation}
+
+\begin{equation}
+  (a_{1}, a_{2}, ..., a_{p})^{T}=\Sigma^{-1}(\mu_{k}-\mu_{l}),
+\end{equation}
+
+classification boundary can be written in the following form
+\begin{equation}  
+  a_{0} + \sum_{i = 1}^{p}a_{i}x_{i} = 0
+\end{equation} 
+
+Now we perform LDA on `wine` data.
+```{r}
+# Fit a linear discriminant model
+lda.fit2 = lda(Label ~ Alcohol + Flavanoids, data = wineTrain)
+lda.fit2
+```
+
+Evaluate model performance with test data set. 
+```{r}
+lda.pred = predict(lda.fit2, newdata = wineTest)
+lda.class = lda.pred$class
+```
+
+A confusion matrix and test error are  
+```{r}
+table(lda.class, wineTest$Label)
+mean(lda.class != wineTest$Label)
+```
+
+The test error rate drop down compared to LDA with only one predictor variable.
+
+```{r, echo=FALSE, fig.height=4, fig.width=5, fig.align='center', fig.cap="Decision boundaries on test data set for two wine features."}
+
+# Estimate sigma using train set 
+X1 = wineTrain$Alcohol[wineTrain$Label == 1]
+X2 = wineTrain$Flavanoids[wineTrain$Label == 1]
+sigma1 = c(cov(X1, X1), cov(X1, X2), cov(X1, X2), cov(X2, X2))
+sigma1 = matrix(sigma1, nrow = 2, ncol = 2)
+
+
+X1 = wineTrain$Alcohol[wineTrain$Label == 2]
+X2 = wineTrain$Flavanoids[wineTrain$Label == 2]
+sigma2 = c(cov(X1, X1), cov(X1, X2), cov(X1, X2), cov(X2, X2))
+sigma2 = matrix(sigma2, nrow = 2, ncol = 2)
+
+
+X1 = wineTrain$Alcohol[wineTrain$Label == 3]
+X2 = wineTrain$Flavanoids[wineTrain$Label == 3]
+sigma3 = c(cov(X1, X1), cov(X1, X2), cov(X1, X2), cov(X2, X2))
+sigma3 = matrix(sigma3, nrow = 2, ncol = 2)
+
+
+sigma = (sigma1+sigma2+sigma3)/3
+sigma = matrix(sigma, nrow = 2, ncol = 2)
+sigma_inv = inv(sigma)
+
+#====================================================================
+# estimate class-specific mean vectors
+mean1 = lda.fit2$means[1, ]
+mean2 = lda.fit2$means[2, ]
+mean3 = lda.fit2$means[3, ]
+
+
+# line between 1 and 2 classes
+a1 = c(sigma_inv %*% (mean1-mean2))
+a01 = c(log(lda.fit2$prior[1]/lda.fit2$prior[2]) -
+          0.5*t(mean1+mean2) %*% sigma_inv %*% (mean1 -mean2))
+
+x = seq(min(wineTest$Alcohol)-0.3, max(wineTest$Alcohol)+0.3, 0.01)
+y = (-a01-a1[1]*x)/a1[2]
+line1 = cbind.data.frame(x,y)
+
+# line between 1 and 3 classes
+a2 = c(sigma_inv %*% (mean1-mean3))
+a02 = c(log(lda.fit2$prior[1]/lda.fit2$prior[3]) -
+          0.5*t(mean1+mean3) %*% sigma_inv %*% (mean1 -mean3))
+
+y = (-a02-a2[1]*x)/a2[2]
+line2 = cbind.data.frame(x,y)
+
+# line between 2 and 3 classes
+a3 = c(sigma_inv %*% (mean2-mean3))
+
+a03 = as.vector(log(lda.fit2$prior[2]/lda.fit2$prior[3]) -
+         0.5*t(mean2+mean3) %*% sigma_inv %*% (mean2 -mean3))
+
+y = (-a03-a3[1]*x)/a3[2]
+line3 = cbind.data.frame(x,y)
+
+# find lines cross-point
+x_cross = (-a02/a2[2]+a01/a1[2])/(-a1[1]/a1[2] + a2[1]/a2[2])
+y_cross = (-a01-a1[1]*x_cross)/a1[2]
+
+
+g = ggplot(data = wineTest, aes(x = Alcohol, y = Flavanoids)) +
+      geom_point(aes(col = Label), size = 2) +
+        labs(color = "Class") +
+  
+        geom_line(data = line1[x < x_cross, ], aes(x,y), linetype = "dashed")+
+          geom_line(data = line2[x > x_cross, ], aes(x,y), linetype = "dashed")+
+            geom_line(data = line3[x < x_cross, ], aes(x,y), linetype = "dashed")+
+  
+              coord_cartesian(ylim = c(min(wineTest$Flavanoids),max(wineTest$Flavanoids)),
+                              xlim =c(min(wineTest$Alcohol),max(wineTest$Alcohol)) ) +
+                
+                  scale_colour_brewer(palette = "Set1")
+
+g
+
+```
+
+## References

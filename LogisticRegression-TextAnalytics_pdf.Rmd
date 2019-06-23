@@ -1,0 +1,180 @@
+---
+title: "Logistic Regression and Text Analytics"
+author: "Olena Smotrova"
+date: "24/02/2018"
+output: 
+  pdf_document:
+    fig_caption: yes
+    highlight: tango
+    toc: yes
+bibliography: library.bib
+link-citations: yes
+csl: advanced-optical-materials.csl
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Logistic Regression
+We consider the problem of predicting a binary response $Y$ using multiple $p$ predictors $X_{1}, X_{2}, ..., X_{p}$. Logistic regression models the probability that $Y$ belongs to a particular category.
+
+\begin{equation}
+p(X)=Pr(Y=1|X)
+\end{equation}
+
+For convinience we are using the generic $0/1$ coding for response. In logistic regression, we use the logistic function
+
+\begin{equation}
+p(X)=\frac{e^{\beta_{0}+\beta_{1}X_{1}+...+\beta_{p}X_{p}}}{1+e^{\beta_{0}+\beta_{1}X_{1}+...+\beta_{p}X_{p}}}
+\end{equation}
+
+We use the maximum likelihood method to estimate $\beta_{0},\beta_{1},...\beta_{p}$. See @StatLearn for more details.
+
+## Text Representation with Bag-of-Words Model
+In oder to use linear classifier on textual data set, we need to transform our data into numeric data. A popular and simple method is called the bag-of-words model of text. A bag-of-words is a representation of text that describes the occurrence of words within a document. It involves two things: a vocabulary of known words and a measure of the presence of known words. It is called a “bag” of words, because any information about the order or structure of words in the document is discarded. The model is only concerned with whether known words occur in the document. 
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# libraries for text mining
+library(tm)
+library(SnowballC)
+
+# read text data from file
+sentences <- read.table("./Data/full_set.txt", header=FALSE, 
+                        sep="\t", quote="", comment.char = "", 
+                        stringsAsFactors=FALSE)
+names(sentences) = c('message', 'labels')
+
+sentences$message[10]
+sentences$message[11]
+
+corpus = Corpus(VectorSource(sentences$message[10:11]))
+dtm = DocumentTermMatrix(corpus)
+as.matrix(dtm)
+```
+
+As the vocabulary size increases, so does the vector representation of documents. There are simple text transforming techniques that can be used to reduce to the size of the vocabulary:
+
+* Ignoring case
+* Ignoring punctuation
+* Ignoring stop words, like “a,” “of,” etc.
+* Reducing words to their stem
+
+## Text Analysis
+Let us consider a text [data set](https://archive.ics.uci.edu/ml/datasets/Sentiment+Labelled+Sentences) consists of 3000 sentences which come from reviews on imdb.com, amazon.com, and yelp.com. Each sentence is labeled according to whether it comes from a positive review or negative review.
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# read text data from file
+sentences <- read.table("./Data/full_set.txt", header=FALSE, 
+                        sep="\t", quote="", comment.char = "", 
+                        stringsAsFactors=FALSE)
+# name variables
+names(sentences) = c('message', 'labels')
+str(sentences)
+```
+For text mining we will use `tm` R library. We need to create a collection of documents 
+(`Corpus`). The `tm` package provides the function to do this. 
+
+```{r}
+corpus = Corpus(VectorSource(sentences$message))
+
+```
+
+Next step is text transformation: eliminate extra space, convert to lower case, remove punctuation and stop words, stem document.
+
+```{r}
+# eliminate extra white spaces
+corpus <- tm_map(corpus, stripWhitespace)
+
+# Convert to lower case
+corpus = tm_map(corpus, content_transformer(tolower))
+
+# Remove punctuation
+corpus = tm_map(corpus, removePunctuation)
+
+stop_words = stopwords("english")
+# Remove stopwords in our documents
+corpus = tm_map(corpus, removeWords, stop_words)
+
+# Stem document 
+corpus = tm_map(corpus, stemDocument)
+
+```
+
+After text cleaning, we create a term-document matrix.
+
+```{r}
+dtm = DocumentTermMatrix(corpus)
+inspect(dtm)
+```
+
+Size of our 'bag' is
+```{r}
+dtm$ncol
+```
+
+To get the frequency of occurrence of each word in the corpus, we simply sum over all rows to give column sums. First 20 most frequently words are
+```{r}
+sort(colSums(as.matrix(dtm)), decreasing = TRUE)[1:20]
+```
+
+Term document matrix tends to be very big. We could reduce matrix size without loosing important information. To do this we remove sparse terms, i.e., terms occurring only in very few documents.
+
+```{r}
+sparse = removeSparseTerms(dtm, 0.995)
+inspect(sparse)
+
+```
+
+We have been almost done for apllying logistic regerssion to the text data. The last step is to add predicted variable to the term document matrix.
+
+```{r}
+# Convert to a data frame
+sentencesSparse = as.data.frame(as.matrix(sparse))
+
+# Make all variable names R-friendly
+colnames(sentencesSparse) = make.names(colnames(sentencesSparse))
+
+# Add dependent variable
+sentencesSparse$labels = sentences$labels
+
+```
+
+Split the data into training and test sets.
+```{r, message=FALSE, warning=FALSE}
+library(caTools)
+
+split = sample.split(sentencesSparse$labels, SplitRatio = 0.83333)
+
+train = subset(sentencesSparse, split==TRUE)
+test = subset(sentencesSparse, split==FALSE)
+
+```
+
+Fit a logistic regression model
+
+```{r, warning=FALSE}
+log.mod = glm(labels~., data = train, family = 'binomial')
+
+pred.log.train = predict(log.mod, type = 'response' )
+pred.log.test = predict(log.mod, newdata = test, type = 'response' )
+
+pred.labels.train = ifelse(pred.log.train > 0.5, 1, 0)
+pred.labels.test = ifelse(pred.log.test > 0.5, 1, 0)
+
+```
+
+Confusion matrix for the training data and training error rate are
+```{r}
+table(pred.labels.train, train$labels)
+mean(train$labels != pred.labels.train)
+```
+
+Confusion matrix for the test data and test error rate are
+```{r}
+table(pred.labels.test, test$labels)
+mean(test$labels != pred.labels.test)
+```
+
+## References
+
